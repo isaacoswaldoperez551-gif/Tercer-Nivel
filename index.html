@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nivel 3 · El Puente del Conocimiento</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#04070f;
+    --panel:#0b1422;
+    --panel-2:#13233a;
+    --line:#274764;
+    --text:#e9f6ff;
+    --muted:#8fb3c9;
+    --cyan:#4ce0d2;
+    --violet:#b78cff;
+    --amber:#f2b705;
+    --danger:#ff4d6d;
+    --ok:#59e6a3;
+    --accent:var(--cyan);
+    --ui:'VT323', ui-monospace, monospace;
+    --pixel:'Press Start 2P', var(--ui);
+  }
+  :root:not([data-theme="light"]){ color-scheme:dark; }
+  *{box-sizing:border-box;}
+  html,body{height:100%; margin:0;}
+  body{
+    background:var(--bg); color:var(--text); font-family:var(--ui);
+    overflow:hidden; -webkit-tap-highlight-color:transparent;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  canvas#stage{position:fixed; inset:0; width:100%; height:100%; display:block; touch-action:none;}
+  .scanlines{position:fixed; inset:0; pointer-events:none; z-index:40; opacity:.35; mix-blend-mode:overlay;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,.14) 0px, rgba(0,0,0,.14) 1px, transparent 2px, transparent 4px);}
+  .vignette{position:fixed; inset:0; pointer-events:none; z-index:39;
+    background:radial-gradient(ellipse at 50% 45%, transparent 45%, rgba(0,0,0,.72) 100%);}
+  #flash{position:fixed; inset:0; pointer-events:none; z-index:45; opacity:0; background:#fff; transition:opacity .28s ease-out;}
+
+  /* ---------- HUD ---------- */
+  .hud{
+    position:fixed; left:0; right:0; top:0; z-index:20; pointer-events:none;
+    padding:calc(10px + env(safe-area-inset-top,0px)) 14px 10px;
+    display:flex; gap:10px 16px; align-items:center; justify-content:space-between; flex-wrap:wrap;
+    background:linear-gradient(180deg, rgba(4,7,15,.92) 55%, transparent);
+  }
+  .hud[hidden]{display:none;}
+  .hud-block{display:flex; align-items:center; gap:8px; font-size:17px; color:var(--muted); line-height:1;}
+  .tag{font-family:var(--pixel); font-size:8px; letter-spacing:1px; color:var(--accent);}
+  .bar{width:104px; height:11px; border:2px solid var(--line); background:#0008; position:relative;}
+  .bar i{position:absolute; inset:0; background:linear-gradient(90deg,var(--accent),#1e90ff); transform-origin:left; transition:transform .25s linear;}
+  .bar.low i{background:linear-gradient(90deg,var(--danger),var(--amber));}
+  .pips{display:flex; gap:5px;}
+  .pips b{width:11px; height:11px; border:2px solid var(--line); background:#0006; display:block;}
+  .pips b.on{background:var(--ok); border-color:var(--ok); box-shadow:0 0 7px var(--ok);}
+  .pips b.bad{background:var(--danger); border-color:var(--danger); box-shadow:0 0 7px var(--danger);}
+  .ghost-btn{
+    pointer-events:auto; font-family:var(--ui); font-size:16px; background:transparent; color:var(--muted);
+    border:2px solid var(--line); padding:5px 11px; cursor:pointer;
+  }
+  .ghost-btn:hover,.ghost-btn:focus-visible{border-color:var(--accent); color:var(--accent); outline:none;}
+
+  /* ---------- Bottom console ---------- */
+  .console{
+    position:fixed; left:0; right:0; bottom:0; z-index:20; pointer-events:none;
+    padding:14px 14px calc(14px + env(safe-area-inset-bottom,0px));
+    background:linear-gradient(0deg, rgba(4,7,15,.95) 55%, transparent);
+    display:flex; flex-direction:column; align-items:center; gap:10px;
+  }
+  .console[hidden]{display:none;}
+  .readout{
+    pointer-events:none; width:100%; max-width:640px; border:2px solid var(--line); background:rgba(11,20,34,.9);
+    padding:9px 13px; font-size:19px; min-height:42px; color:var(--text); text-align:center;
+  }
+  .readout b{color:var(--accent);}
+  .readout.err b{color:var(--danger);}
+  .options{
+    pointer-events:auto; width:100%; max-width:720px; display:grid; gap:10px;
+    grid-template-columns:repeat(auto-fit, minmax(190px,1fr)); max-height:38vh; overflow-y:auto;
+  }
+  .option{
+    font-family:var(--ui); font-size:19px; line-height:1.15; color:var(--text); text-align:left;
+    background:rgba(19,35,58,.92); border:2px solid var(--line); padding:12px 13px; cursor:pointer;
+    transition:transform .12s ease, border-color .12s ease;
+  }
+  .option:hover,.option:focus-visible{border-color:var(--accent); transform:translateY(-2px); outline:none;}
+  .option.correct{border-color:var(--ok); box-shadow:0 0 16px #59e6a355;}
+  .option.wrong{border-color:var(--danger); box-shadow:0 0 16px #ff4d6d55;}
+  .console-row{pointer-events:auto; display:flex; gap:10px; flex-wrap:wrap; justify-content:center;}
+
+  /* ---------- Overlays ---------- */
+  .veil{
+    position:fixed; inset:0; z-index:30; display:none; align-items:center; justify-content:center;
+    padding:calc(18px + env(safe-area-inset-top,0px)) 18px calc(18px + env(safe-area-inset-bottom,0px));
+    background:rgba(3,5,11,.86); backdrop-filter:blur(2px); overflow-y:auto;
+  }
+  .veil.show{display:flex;}
+  .card{
+    width:100%; max-width:560px; border:3px solid var(--accent); background:linear-gradient(165deg, var(--panel), #060a13);
+    padding:26px 22px; box-shadow:0 0 44px rgba(76,224,210,.18);
+  }
+  .card.win{border-color:var(--ok); box-shadow:0 0 44px #59e6a340;}
+  .card.lose{border-color:var(--danger); box-shadow:0 0 44px #ff4d6d40;}
+  .card h2{font-family:var(--pixel); font-size:15px; line-height:1.7; color:var(--accent); margin:0 0 14px;}
+  .card.win h2{color:var(--ok);} .card.lose h2{color:var(--danger);}
+  .card p{font-size:20px; line-height:1.35; color:var(--muted); margin:0 0 14px;}
+  .card p strong{color:var(--text); font-weight:400;}
+  .btn{
+    font-family:var(--ui); font-size:20px; background:var(--panel-2); color:var(--text);
+    border:2px solid var(--line); padding:11px 20px; cursor:pointer;
+  }
+  .btn:hover,.btn:focus-visible{border-color:var(--accent); color:var(--accent); outline:none;}
+  .btn.primary{border-color:var(--accent); color:var(--accent);}
+  .btn.primary:hover{background:var(--accent); color:#04121a;}
+  .card-actions{display:flex; gap:10px; flex-wrap:wrap; margin-top:4px;}
+
+  /* ---------- Hub ---------- */
+  #hub .card{max-width:700px; border-color:var(--amber); box-shadow:0 0 50px rgba(242,183,5,.14); background:linear-gradient(165deg,#120e08,#05070d);}
+  #hub h1{font-family:var(--pixel); font-size:23px; line-height:1.6; color:var(--amber); margin:0 0 6px; text-shadow:0 0 18px rgba(242,183,5,.35);}
+  #hub .lede{font-size:21px; color:var(--muted); margin:0 0 20px; max-width:56ch;}
+  .levels{display:grid; gap:10px; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); margin-bottom:16px;}
+  .lvl{
+    text-align:left; font-family:var(--ui); font-size:19px; color:var(--text); cursor:pointer;
+    background:rgba(19,35,58,.6); border:2px solid var(--line); padding:12px 13px; display:block; width:100%;
+    transition:border-color .12s ease, transform .12s ease;
+  }
+  .lvl:hover:not(:disabled),.lvl:focus-visible:not(:disabled){border-color:var(--amber); transform:translateY(-2px); outline:none;}
+  .lvl .n{font-family:var(--pixel); font-size:8px; color:var(--amber); display:block; margin-bottom:7px;}
+  .lvl .d{color:var(--muted); font-size:17px; display:block; margin-top:3px;}
+  .lvl:disabled{opacity:.45; cursor:not-allowed;}
+  .lvl.done{border-color:var(--ok);} .lvl.done .n{color:var(--ok);}
+  .relics{display:flex; gap:9px; align-items:center; flex-wrap:wrap; font-size:17px; color:var(--muted);}
+  .relic{width:15px; height:15px; border:2px solid var(--line); transform:rotate(45deg);}
+  .relic.got{background:var(--ok); border-color:var(--ok); box-shadow:0 0 9px var(--ok);}
+
+  .qr-code{background:#fff; padding:12px; display:inline-block; margin:0 0 12px;}
+  .qr-code canvas,.qr-code img{display:block;}
+  .valid-code{font-family:var(--pixel); font-size:12px; color:var(--amber); background:#000; border:2px dashed var(--amber);
+    padding:10px; margin-bottom:14px; letter-spacing:2px; word-break:break-all; text-align:center;}
+  .score-row{display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap;}
+  .score-row input{flex:1 1 180px; font-family:var(--ui); font-size:19px; background:#000; color:var(--text); border:2px solid var(--line); padding:8px 10px;}
+  .score-row input:focus-visible{border-color:var(--accent); outline:none;}
+  .board{border:2px solid var(--line); padding:10px 14px; margin-bottom:14px; max-height:150px; overflow-y:auto;}
+  .board h3{font-family:var(--pixel); font-size:9px; color:var(--accent); margin:0 0 8px;}
+  .board ol{margin:0; padding-left:20px; font-size:18px; color:var(--text);}
+
+  #boot{position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center; background:var(--bg);}
+  #boot span{font-family:var(--pixel); font-size:11px; color:var(--cyan); animation:pulse 1.1s steps(2,end) infinite;}
+  @keyframes pulse{50%{opacity:.25;}}
+
+  @media (max-width:520px){
+    #hub h1{font-size:17px;} .card h2{font-size:12px;}
+    .readout{font-size:18px;} .option{font-size:18px;}
+    .hud{font-size:15px; padding-top:calc(8px + env(safe-area-inset-top,0px));}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important;}
+  }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<div class="vignette"></div>
+<div class="scanlines"></div>
+<div id="flash"></div>
+
+<header class="hud" id="hud">
+  <div class="hud-block"><span class="tag" id="hudTag">CÁMARA</span><span id="hudTitle">—</span></div>
+  <div class="hud-block" id="hudMetricWrap"><span id="hudMetricLbl">Estabilidad</span><div class="bar" id="hudBar"><i id="hudBarFill"></i></div></div>
+  <div class="hud-block" id="hudMetric2Wrap" hidden><span id="hudMetric2Lbl">Energía</span><div class="bar" id="hudBar2"><i id="hudBar2Fill"></i></div></div>
+  <div class="hud-block"><span id="hudLivesLbl">Errores</span><div class="pips" id="hudLives"></div></div>
+  <div class="hud-block"><button class="ghost-btn" id="reloadBtn">Reiniciar</button></div>
+</header>
+
+<section class="console" id="console">
+  <div class="options" id="options" hidden></div>
+  <div class="readout" id="readout">—</div>
+  <div class="console-row" id="consoleRow"></div>
+</section>
+<!-- Result -->
+<div class="veil" id="result">
+  <div class="card win" id="resultCard">
+    <h2 id="resultTitle">—</h2>
+    <p id="resultText">—</p>
+    <div class="card-actions" id="resultActions"></div>
+  </div>
+</div>
+<div id="boot"><span>Cargando el puente…</span></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+
+const $ = s => document.querySelector(s);
+const clamp = (v,a,b) => v<a?a:(v>b?b:v);
+const lerp = (a,b,t) => a+(b-a)*t;
+const easeOut = t => 1-Math.pow(1-t,3);
+const easeInOut = t => t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+
+const ui = {
+  hud:$('#hud'), hudTag:$('#hudTag'), hudTitle:$('#hudTitle'), hudMetricLbl:$('#hudMetricLbl'),
+  hudBar:$('#hudBar'), hudBarFill:$('#hudBarFill'), hudLives:$('#hudLives'), hudLivesLbl:$('#hudLivesLbl'),
+  hudMetricWrap:$('#hudMetricWrap'),
+  hudMetric2Wrap:$('#hudMetric2Wrap'), hudMetric2Lbl:$('#hudMetric2Lbl'), hudBar2:$('#hudBar2'), hudBar2Fill:$('#hudBar2Fill'),
+  console:$('#console'), options:$('#options'), readout:$('#readout'), consoleRow:$('#consoleRow'),
+  result:$('#result'), resultCard:$('#resultCard'), resultTitle:$('#resultTitle'), resultText:$('#resultText'),
+  resultActions:$('#resultActions'), flash:$('#flash')
+};
+
+function say(html, isErr){
+  ui.readout.innerHTML = html;
+  ui.readout.classList.toggle('err', !!isErr);
+}
+function flash(color, strength){
+  ui.flash.style.background = color || '#ffffff';
+  ui.flash.style.opacity = strength==null ? .55 : strength;
+  setTimeout(()=>{ ui.flash.style.opacity = 0; }, 60);
+}
+function setAccent(hex){ document.documentElement.style.setProperty('--accent', hex); }
+function setLives(used, max){
+  ui.hudLives.innerHTML = '';
+  for(let i=0;i<max;i++){
+    const b = document.createElement('b');
+    if(i < used) b.className = 'bad';
+    ui.hudLives.appendChild(b);
+  }
+}
+function setPips(done, total){
+  ui.hudLives.innerHTML = '';
+  for(let i=0;i<total;i++){
+    const b = document.createElement('b');
+    if(i < done) b.className = 'on';
+    ui.hudLives.appendChild(b);
+  }
+}
+
+/* =======================================================================
+   1. Motor: renderer, cámara orbital suave, tweens, partículas
+   ======================================================================= */
+const canvas = $('#stage');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.setSize(window.innerWidth, window.innerHeight);
+
+const camera = new THREE.PerspectiveCamera(52, window.innerWidth/window.innerHeight, .1, 300);
+const clock = new THREE.Clock();
+
+const rig = {
+  target:new THREE.Vector3(), goalTarget:new THREE.Vector3(),
+  radius:11, goalRadius:11,
+  theta:0, goalTheta:0, phi:1.22, goalPhi:1.22,
+  minPhi:.55, maxPhi:1.72, thetaRange:.75, baseTheta:0,
+  shake:0
+};
+function frameCamera(o){
+  rig.goalTarget.set(o.tx||0, o.ty||0, o.tz||0);
+  if(o.snap){ rig.target.copy(rig.goalTarget); rig.radius = o.radius; rig.theta = o.theta||0; rig.phi = o.phi||1.22; }
+  rig.goalRadius = o.radius; rig.baseTheta = o.theta||0; rig.goalTheta = o.theta||0; rig.goalPhi = o.phi||1.22;
+  if(o.thetaRange!=null) rig.thetaRange = o.thetaRange;
+}
+function updateRig(dt){
+  const k = 1-Math.pow(.0015, dt);
+  rig.target.lerp(rig.goalTarget, k);
+  rig.radius = lerp(rig.radius, rig.goalRadius, k);
+  rig.theta = lerp(rig.theta, rig.goalTheta, k);
+  rig.phi = lerp(rig.phi, rig.goalPhi, k);
+  const sp = Math.sin(rig.phi);
+  camera.position.set(
+    rig.target.x + rig.radius*sp*Math.sin(rig.theta),
+    rig.target.y + rig.radius*Math.cos(rig.phi),
+    rig.target.z + rig.radius*sp*Math.cos(rig.theta)
+  );
+  if(rig.shake > 0){
+    const s = rig.shake;
+    camera.position.x += (Math.random()-.5)*s;
+    camera.position.y += (Math.random()-.5)*s;
+    rig.shake = Math.max(0, rig.shake - dt*1.6);
+  }
+  camera.lookAt(rig.target);
+}
+
+/* --- tweens --- */
+let tweens = [];
+function tween(o){ o.t = 0; tweens.push(o); return o; }
+function updateTweens(dt){
+  for(let i=tweens.length-1;i>=0;i--){
+    const tw = tweens[i];
+    tw.t += dt;
+    const p = clamp(tw.t/tw.dur, 0, 1);
+    tw.step(tw.ease ? tw.ease(p) : p, p);
+    if(p >= 1){ tweens.splice(i,1); if(tw.done) tw.done(); }
+  }
+}
+
+/* --- timers de escena --- */
+let timeouts = [];
+function later(fn, ms){ const id = setTimeout(fn, ms); timeouts.push(id); return id; }
+function clearLater(){ timeouts.forEach(clearTimeout); timeouts = []; }
+
+/* --- texturas procedurales --- */
+function glowTexture(){
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(64,64,0,64,64,64);
+  grd.addColorStop(0,'rgba(255,255,255,1)');
+  grd.addColorStop(.28,'rgba(255,255,255,.45)');
+  grd.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle = grd; g.fillRect(0,0,128,128);
+  return new THREE.CanvasTexture(c);
+}
+const GLOW = glowTexture();
+function glowSprite(color, size, opacity){
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({
+    map:GLOW, color:new THREE.Color(color), blending:THREE.AdditiveBlending,
+    depthWrite:false, transparent:true, opacity:opacity==null?.75:opacity
+  }));
+  s.scale.setScalar(size);
+  return s;
+}
+function letterTexture(txt, color){
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d');
+  g.clearRect(0,0,256,256);
+  g.font = '700 108px "Press Start 2P", monospace';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.shadowColor = color; g.shadowBlur = 26;
+  g.fillStyle = color; g.fillText(txt, 128, 136);
+  const t = new THREE.CanvasTexture(c); t.anisotropy = 4; return t;
+}
+function letterSprite(txt, color, size){
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({
+    map:letterTexture(txt,color), transparent:true, depthTest:false, depthWrite:false
+  }));
+  s.scale.setScalar(size); s.renderOrder = 20;
+  return s;
+}
+function wrapText(g, text, maxW){
+  const words = String(text).split(/\s+/); const lines = []; let line = '';
+  words.forEach(w=>{
+    const t = line ? line+' '+w : w;
+    if(g.measureText(t).width > maxW && line){ lines.push(line); line = w; } else line = t;
+  });
+  if(line) lines.push(line);
+  return lines;
+}
+function textSprite(text, color, widthUnits){
+  const W = 512, H = 128;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  g.font = '64px "VT323", monospace';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.shadowColor = '#000'; g.shadowBlur = 10;
+  g.fillStyle = color; g.fillText(text, W/2, H/2);
+  const tex = new THREE.CanvasTexture(c); tex.anisotropy = 4;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:true, depthTest:false, depthWrite:false }));
+  s.scale.set(widthUnits, widthUnits*H/W, 1);
+  s.renderOrder = 18;
+  return s;
+}
+function holoTexture(label, body, accent, bg){
+  const W = 1024, H = 420;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  g.fillStyle = bg || '#0b0619'; g.fillRect(0,0,W,H);
+  g.globalAlpha = .14; g.fillStyle = accent; g.fillRect(0,0,W,H); g.globalAlpha = 1;
+  g.strokeStyle = accent; g.lineWidth = 8; g.strokeRect(14,14,W-28,H-28);
+  g.globalAlpha = .12; g.strokeStyle = accent; g.lineWidth = 2;
+  for(let y=0;y<H;y+=8){ g.beginPath(); g.moveTo(0,y); g.lineTo(W,y); g.stroke(); }
+  g.globalAlpha = 1;
+  g.font = '26px "Press Start 2P", monospace'; g.fillStyle = 'rgba(167,149,207,.9)';
+  g.textAlign = 'center'; g.fillText(label, W/2, 82);
+  g.font = '62px "VT323", monospace'; g.fillStyle = '#efe7ff';
+  g.shadowColor = accent; g.shadowBlur = 18;
+  const lines = wrapText(g, body, W-140);
+  const start = H/2 - ((lines.length-1)*66)/2 + 18;
+  lines.forEach((ln,i)=> g.fillText(ln, W/2, start + i*66));
+  const t = new THREE.CanvasTexture(c); t.anisotropy = 4; return t;
+}
+
+/* --- partículas --- */
+function makeBurst(scene, color, count){
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(count*3);
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const mat = new THREE.PointsMaterial({
+    color:new THREE.Color(color), size:.16, map:GLOW, transparent:true,
+    blending:THREE.AdditiveBlending, depthWrite:false, opacity:0
+  });
+  const pts = new THREE.Points(geo, mat);
+  pts.frustumCulled = false;
+  pts.userData = { vel:new Float32Array(count*3), life:0, count };
+  scene.add(pts);
+  return pts;
+}
+function fireBurst(pts, origin, power){
+  const d = pts.geometry.attributes.position.array, v = pts.userData.vel, n = pts.userData.count;
+  for(let i=0;i<n;i++){
+    d[i*3] = origin.x; d[i*3+1] = origin.y; d[i*3+2] = origin.z;
+    const th = Math.random()*Math.PI*2, ph = Math.acos(2*Math.random()-1), sp = (.4+Math.random())*power;
+    v[i*3] = Math.sin(ph)*Math.cos(th)*sp; v[i*3+1] = Math.sin(ph)*Math.sin(th)*sp; v[i*3+2] = Math.cos(ph)*sp;
+  }
+  pts.userData.life = 1;
+  pts.material.opacity = 1;
+  pts.geometry.attributes.position.needsUpdate = true;
+}
+function updateBurst(pts, dt){
+  if(pts.userData.life <= 0) return;
+  const d = pts.geometry.attributes.position.array, v = pts.userData.vel, n = pts.userData.count;
+  for(let i=0;i<n;i++){
+    d[i*3] += v[i*3]*dt; d[i*3+1] += v[i*3+1]*dt - .5*dt*dt*4; d[i*3+2] += v[i*3+2]*dt;
+    v[i*3+1] -= 2.2*dt;
+  }
+  pts.userData.life -= dt*.75;
+  pts.material.opacity = Math.max(0, pts.userData.life);
+  pts.geometry.attributes.position.needsUpdate = true;
+}
+
+/* --- etiquetas 3D que siempre miran a cámara --- */
+let labels = [];
+function attachLabel(scene, obj, txt, color, size, radius){
+  const s = letterSprite(txt, color, size);
+  scene.add(s);
+  const rec = { sprite:s, obj, radius };
+  labels.push(rec);
+  return rec;
+}
+function dropLabels(pred){
+  labels = labels.filter(L=>{
+    if(!pred(L)) return true;
+    if(L.sprite.parent) L.sprite.parent.remove(L.sprite);
+    if(L.sprite.material.map) L.sprite.material.map.dispose();
+    L.sprite.material.dispose();
+    return false;
+  });
+}
+const _wp = new THREE.Vector3(), _dir = new THREE.Vector3();
+function updateLabels(){
+  for(let i=labels.length-1;i>=0;i--){
+    const L = labels[i];
+    if(!L.obj.parent){ L.sprite.visible = false; continue; }
+    L.obj.getWorldPosition(_wp);
+    _dir.copy(camera.position).sub(_wp).normalize().multiplyScalar(L.radius);
+    L.sprite.position.copy(_wp).add(_dir);
+    L.sprite.visible = L.obj.visible;
+  }
+}
+
+/* --- control de escena activa --- */
+let current = null;   // { scene, update(dt), click(hitList), dispose() }
+function setScene(next){
+  if(current && current.dispose) current.dispose();
+  clearLater(); tweens = []; labels = [];
+  current = next;
+}
+
+/* --- entrada: arrastrar para orbitar, tocar para interactuar --- */
+const pointer = new THREE.Vector2();
+const raycaster = new THREE.Raycaster();
+let down = null, dragged = false;
+canvas.addEventListener('pointerdown', e=>{
+  down = { x:e.clientX, y:e.clientY, theta:rig.goalTheta, phi:rig.goalPhi };
+  dragged = false;
+  canvas.setPointerCapture(e.pointerId);
+});
+let lastHover = 0;
+canvas.addEventListener('pointermove', e=>{
+  if(!down) return;
+  const dx = e.clientX-down.x, dy = e.clientY-down.y;
+  if(!dragged && Math.hypot(dx,dy) > 7) dragged = true;
+  if(dragged){
+    rig.goalTheta = clamp(down.theta - dx*.005, rig.baseTheta-rig.thetaRange, rig.baseTheta+rig.thetaRange);
+    rig.goalPhi = clamp(down.phi - dy*.004, rig.minPhi, rig.maxPhi);
+  }
+});
+canvas.addEventListener('pointermove', e=>{
+  if(down || !current || !current.hitTargets) return;
+  const now = performance.now();
+  if(now - lastHover < 90) return;
+  lastHover = now;
+  const r = canvas.getBoundingClientRect();
+  pointer.x = ((e.clientX-r.left)/r.width)*2-1;
+  pointer.y = -((e.clientY-r.top)/r.height)*2+1;
+  raycaster.setFromCamera(pointer, camera);
+  canvas.style.cursor = raycaster.intersectObjects(current.hitTargets()).length ? 'pointer' : 'grab';
+});
+canvas.addEventListener('pointerup', e=>{
+  if(down && !dragged && current && current.click){
+    const r = canvas.getBoundingClientRect();
+    pointer.x = ((e.clientX-r.left)/r.width)*2-1;
+    pointer.y = -((e.clientY-r.top)/r.height)*2+1;
+    raycaster.setFromCamera(pointer, camera);
+    current.click(raycaster);
+  }
+  down = null;
+});
+canvas.addEventListener('pointercancel', ()=>{ down = null; });
+
+window.addEventListener('resize', ()=>{
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* --- bucle --- */
+function loop(){
+  requestAnimationFrame(loop);
+  const dt = Math.min(clock.getDelta(), .05);
+  if(current && current.update) current.update(dt);
+  updateTweens(dt);
+  updateRig(dt);
+  updateLabels();
+  if(current) renderer.render(current.scene, camera);
+}
+
+
+/* =======================================================================
+   2. Piezas de escenografía reutilizables
+   ======================================================================= */
+function starField(scene, count, spread, color){
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(count*3);
+  for(let i=0;i<count;i++){
+    pos[i*3]   = (Math.random()-.5)*spread;
+    pos[i*3+1] = (Math.random()-.5)*spread*.6;
+    pos[i*3+2] = (Math.random()-.5)*spread;
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({
+    color:new THREE.Color(color||0xffffff), size:.42, map:GLOW,
+    transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, opacity:.85
+  }));
+  scene.add(pts);
+  return pts;
+}
+function neonRing(radius, tube, color, opacity){
+  const m = new THREE.Mesh(
+    new THREE.TorusGeometry(radius, tube, 10, 80),
+    new THREE.MeshBasicMaterial({ color:new THREE.Color(color), transparent:true, opacity:opacity==null?.7:opacity, blending:THREE.AdditiveBlending, depthWrite:false })
+  );
+  return m;
+}
+function gridFloor(scene, y, color, dim){
+  const grid = new THREE.GridHelper(120, 60, new THREE.Color(color), new THREE.Color(dim));
+  grid.material.transparent = true; grid.material.opacity = .28; grid.position.y = y;
+  scene.add(grid);
+  const plane = new THREE.Mesh(
+    new THREE.PlaneGeometry(200,200),
+    new THREE.MeshStandardMaterial({ color:0x04080f, roughness:.85, metalness:.2 })
+  );
+  plane.rotation.x = -Math.PI/2; plane.position.y = y-.02;
+  scene.add(plane);
+  return grid;
+}
+
+
+const DOMINOES = [
+  { tile:'Fórmula del PET: (C₁₀H₈O₄)ₙ', correct:'Polímero usado en botellas plásticas',
+    wrong:['Compuesto usado en fertilizantes','Gas de efecto invernadero'] },
+  { tile:'NaCl', correct:'Sal de mesa, compuesto iónico',
+    wrong:['Ácido usado en baterías','Metal de alta conductividad'] },
+  { tile:'Ley de Hooke: F = k·x', correct:'Describe la fuerza de un resorte elástico',
+    wrong:['Describe la caída libre de los cuerpos','Describe la presión de un gas ideal'] },
+  { tile:'H₂O', correct:'Molécula polar, disolvente universal',
+    wrong:['Gas noble inerte','Compuesto altamente inflamable'] },
+  { tile:'Ley de Ohm: V = I·R', correct:'Relaciona voltaje, corriente y resistencia',
+    wrong:['Relaciona masa y aceleración','Relaciona presión y volumen de un gas'] },
+  { tile:'CO₂', correct:'Producto de la combustión y la respiración celular',
+    wrong:['Componente principal del aire puro','Gas que las plantas absorben del suelo'] }
+];
+const NEEDED = 5, MAX_FAIL = 2;
+
+function shuffle(arr){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){ const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]] = [a[j],a[i]]; }
+  return a;
+}
+
+function buildBridge(){
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0616);
+  scene.fog = new THREE.FogExp2(0x0a0616, .022);
+
+  scene.add(new THREE.AmbientLight(0x2a1f4d, 1.0));
+  const key = new THREE.PointLight(0xb78cff, 2.0, 60); key.position.set(0,7,6); scene.add(key);
+  const deep = new THREE.PointLight(0x3a1f7a, 1.4, 80); deep.position.set(0,-8,-14); scene.add(deep);
+
+  starField(scene, 700, 120, 0xd8ccff);
+
+  // niebla del abismo
+  const mist = new THREE.Mesh(
+    new THREE.PlaneGeometry(90, 90),
+    new THREE.MeshBasicMaterial({ color:0x3a1f7a, transparent:true, opacity:.16, blending:THREE.AdditiveBlending, depthWrite:false })
+  );
+  mist.rotation.x = -Math.PI/2; mist.position.y = -9; scene.add(mist);
+
+  const SPACING = 4.0;
+  const startZ = 4;
+
+  // plataforma de salida
+  const ledge = new THREE.Mesh(
+    new THREE.BoxGeometry(6.5,.6,4),
+    new THREE.MeshStandardMaterial({ color:0x1a1233, roughness:.7, metalness:.3 })
+  );
+  ledge.position.set(0,-.9, startZ+1.4); scene.add(ledge);
+  const ledgeRing = neonRing(2.4,.04,0xb78cff,.6); ledgeRing.rotation.x = Math.PI/2; ledgeRing.position.set(0,-.55,startZ+1.4); scene.add(ledgeRing);
+
+  // tramos del puente
+  const planks = [];
+  for(let i=0;i<NEEDED;i++){
+    const p = new THREE.Group();
+    const slab = new THREE.Mesh(
+      new THREE.BoxGeometry(3.2,.28,2.4),
+      new THREE.MeshStandardMaterial({ color:0x241849, emissive:0xb78cff, emissiveIntensity:.0, roughness:.5, metalness:.4 })
+    );
+    p.add(slab);
+    const edge = new THREE.Mesh(
+      new THREE.BoxGeometry(3.3,.05,2.5),
+      new THREE.MeshBasicMaterial({ color:0xb78cff, transparent:true, opacity:0, blending:THREE.AdditiveBlending, depthWrite:false })
+    );
+    edge.position.y = .18; p.add(edge);
+    const halo = glowSprite(0xb78cff, 4.5, 0); p.add(halo);
+    p.position.set(0, -.9, startZ - (i+1)*SPACING);
+    p.scale.set(.01,.01,.01);
+    p.visible = false;
+    scene.add(p);
+    planks.push({ g:p, slab, edge, halo });
+  }
+
+  // portal final
+  const portal = new THREE.Group();
+  portal.position.set(0, .4, startZ - (NEEDED+1.3)*SPACING);
+  const pRing = neonRing(3.0,.09,0xb78cff,.85); portal.add(pRing);
+  const pRing2 = neonRing(3.55,.035,0x59e6a3,.5); portal.add(pRing2);
+  const pDisc = new THREE.Mesh(
+    new THREE.CircleGeometry(2.92, 48),
+    new THREE.MeshBasicMaterial({ color:0x120a26, transparent:true, opacity:.9 })
+  );
+  portal.add(pDisc);
+  portal.add(glowSprite(0xb78cff, 9, .22));
+  scene.add(portal);
+
+  // orbe del jugador
+  const orb = new THREE.Group();
+  orb.position.set(0, -.1, startZ+1.4);
+  const orbCore = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(.42, 1),
+    new THREE.MeshStandardMaterial({ color:0x2a1b4d, emissive:0xb78cff, emissiveIntensity:1.1, roughness:.3, metalness:.5, flatShading:true })
+  );
+  orb.add(orbCore);
+  const orbRing = neonRing(.8,.025,0xb78cff,.8); orbRing.rotation.x = 1.2; orb.add(orbRing);
+  orb.add(glowSprite(0xb78cff, 3.4, .5));
+  scene.add(orb);
+
+  // ficha holográfica
+  const holo = new THREE.Group();
+  const holoPlane = new THREE.Mesh(
+    new THREE.PlaneGeometry(6.4, 2.6),
+    new THREE.MeshBasicMaterial({ map:holoTexture('FICHA','—','#b78cff'), transparent:true, opacity:.96 })
+  );
+  holo.add(holoPlane);
+  const holoEdge = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.PlaneGeometry(6.6, 2.8)),
+    new THREE.LineBasicMaterial({ color:0xb78cff, transparent:true, opacity:.7 })
+  );
+  holo.add(holoEdge);
+  scene.add(holo);
+
+  const burst = makeBurst(scene, 0xb78cff, 180);
+
+  // ---- estado
+  let order = shuffle(DOMINOES), idx = 0, score = 0, fails = 0, busy = false, currentD = null;
+
+  function holoAt(z){ holo.position.set(0, 2.5, z - 1.2); }
+
+  function nextTile(){
+    if(score >= NEEDED) return openPortal();
+    currentD = order[idx % order.length]; idx++;
+    holoPlane.material.map.dispose();
+    holoPlane.material.map = holoTexture('FICHA ' + (score+1) + ' DE ' + NEEDED, currentD.tile, '#b78cff');
+    holoPlane.material.needsUpdate = true;
+    holo.scale.setScalar(.6);
+    tween({ dur:.4, ease:easeOut, step(p){ holo.scale.setScalar(lerp(.6,1,p)); } });
+
+    const opts = shuffle([currentD.correct].concat(currentD.wrong));
+    ui.options.hidden = false;
+    ui.options.innerHTML = '';
+    opts.forEach(txt=>{
+      const b = document.createElement('button');
+      b.className = 'option'; b.type = 'button'; b.textContent = txt;
+      b.addEventListener('click', ()=> choose(b, txt));
+      ui.options.appendChild(b);
+    });
+    say('Empareja la ficha con su descripción correcta.');
+  }
+
+  function choose(btn, txt){
+    if(busy) return;
+    busy = true;
+    ui.options.querySelectorAll('.option').forEach(o=> o.disabled = true);
+    if(txt === currentD.correct){
+      btn.classList.add('correct');
+      score++;
+      setPips(score, NEEDED);
+      ui.hudBarFill.style.transform = 'scaleX('+(score/NEEDED)+')';
+      say('<b>Tramo proyectado.</b> Coherencia confirmada.');
+      materialize(score-1);
+    } else {
+      btn.classList.add('wrong');
+      fails++;
+      rig.shake = .6;
+      flash('#ff4d6d', .45);
+      say(`<b>Fallo de coherencia.</b> La ficha corresponde a: ${currentD.correct}.`, true);
+      if(fails >= MAX_FAIL){
+        collapse();
+        return;
+      }
+      later(()=>{ busy = false; nextTile(); }, 1400);
+    }
+  }
+
+  function materialize(i){
+    const p = planks[i];
+    p.g.visible = true;
+    flash('#b78cff', .28);
+    tween({
+      dur:.55, ease:easeOut,
+      step(t){
+        p.g.scale.set(lerp(.01,1,t), lerp(.01,1,t), lerp(.01,1,t));
+        p.slab.material.emissiveIntensity = t*.8;
+        p.edge.material.opacity = t*.9;
+        p.halo.material.opacity = t*.35;
+      },
+      done(){ fireBurst(burst, p.g.position, 2.6); }
+    });
+    // el orbe avanza al nuevo tramo
+    const from = orb.position.clone();
+    const to = p.g.position.clone(); to.y += .9;
+    later(()=>{
+      tween({
+        dur:.75, ease:easeInOut,
+        step(t){
+          orb.position.lerpVectors(from, to, t);
+          orb.position.y += Math.sin(t*Math.PI)*.6;
+          rig.goalTarget.set(0, orb.position.y+1.1, orb.position.z-1.2);
+        },
+        done(){
+          holoAt(orb.position.z);
+          busy = false;
+          nextTile();
+        }
+      });
+    }, 380);
+  }
+
+  function openPortal(){
+    busy = true;
+    ui.options.hidden = true; ui.options.innerHTML = '';
+    say('<b>Puente completo.</b> El portal responde a la secuencia.');
+    const from = orb.position.clone();
+    const to = portal.position.clone();
+    tween({
+      dur:1.6, ease:easeInOut,
+      step(t){
+        orb.position.lerpVectors(from, to, t);
+        portal.scale.setScalar(lerp(1,1.25,t));
+        pDisc.material.opacity = lerp(.9,0,t);
+        rig.goalTarget.set(0, orb.position.y+.8, orb.position.z-1);
+        holo.scale.setScalar(Math.max(0, 1-t*1.6));
+      },
+      done(){
+        flash('#ffffff', .9);
+        fireBurst(burst, portal.position, 6);
+        later(()=> endLevel('l3', true), 700);
+      }
+    });
+  }
+
+  function collapse(){
+    ui.options.hidden = true;
+    const from = orb.position.clone();
+    tween({
+      dur:1.2, ease:t=>t*t,
+      step(t){
+        orb.position.y = from.y - t*14;
+        planks.forEach(p=>{ if(p.g.visible){ p.g.position.y = -.9 - t*9; p.g.rotation.z += .04; } });
+        rig.goalTarget.set(0, orb.position.y*.4, orb.position.z);
+      },
+      done(){ endLevel('l3', false, 'El puente perdió coherencia y se derrumbó.'); }
+    });
+  }
+
+  // ---- montaje
+  setAccent('#b78cff');
+  ui.hudTag.textContent = 'CÁMARA 3';
+  ui.hudMetricLbl.textContent = 'Puente';
+  ui.hudMetricWrap.hidden = false;
+  ui.hudBarFill.style.transform = 'scaleX(0)';
+  ui.hudBar.classList.remove('low');
+  ui.hudLivesLbl.textContent = 'Tramos';
+  ui.hudTitle.textContent = 'Cruce del abismo';
+  setPips(0, NEEDED);
+  ui.consoleRow.innerHTML = '';
+
+  frameCamera({ tx:0, ty:1.2, tz:startZ-1.2, radius:9.5, theta:0, phi:1.22, thetaRange:.55, snap:true });
+  holoAt(orb.position.z);
+  nextTile();
+
+  let t = 0;
+  return {
+    scene,
+    update(dt){
+      t += dt;
+      orbCore.rotation.y += dt*.8; orbCore.rotation.x += dt*.35;
+      orbRing.rotation.z += dt*1.3;
+      pRing.rotation.z += dt*.35; pRing2.rotation.z -= dt*.5;
+      holo.position.y = 2.5 + Math.sin(t*1.1)*.12;
+      holo.lookAt(camera.position.x, holo.position.y, camera.position.z);
+      planks.forEach((p,i)=>{ if(p.g.visible) p.g.position.y = -.9 + Math.sin(t*1.2 + i)*.06; });
+      mist.material.opacity = .13 + Math.sin(t*.7)*.04;
+      updateBurst(burst, dt);
+    },
+    dispose(){ ui.options.hidden = true; ui.options.innerHTML = ''; }
+  };
+}
+
+
+function endLevel(id, won, msg){
+  ui.resultCard.className = 'card ' + (won ? 'win' : 'lose');
+  ui.resultTitle.textContent = won ? 'MATRIZ DE SECUENCIA OBTENIDA' : 'PUENTE COLAPSADO';
+  ui.resultText.innerHTML = won
+    ? 'Cruzaste el abismo con una secuencia de 5 enlaces conceptuales coherentes.'
+    : (msg || 'El puente perdió coherencia.') + ' Puedes repetir la cámara cuantas veces quieras.';
+  ui.resultActions.innerHTML = '';
+  const again = document.createElement('button');
+  again.className = 'btn primary';
+  again.textContent = won ? 'Jugar de nuevo' : 'Reintentar';
+  again.addEventListener('click', ()=> location.reload());
+  ui.resultActions.appendChild(again);
+  ui.result.classList.add('show');
+}
+
+document.getElementById('reloadBtn').addEventListener('click', ()=> location.reload());
+function boot(){
+  document.getElementById('boot').style.display = 'none';
+  setScene(buildBridge());
+  loop();
+}
+if(document.fonts && document.fonts.ready){
+  let started = false;
+  const go = ()=>{ if(!started){ started = true; boot(); } };
+  document.fonts.ready.then(go);
+  setTimeout(go, 2500);
+} else boot();
+
+})();
+</script>
+</body>
+</html>
